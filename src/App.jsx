@@ -6,6 +6,7 @@ import { initDDragon, loadingUrl } from "./ddragon.js";
 import { read } from "./anthropic.js";
 import { saveCard } from "./share.js";
 import { scoreColor } from "./theme.js";
+import { detailFor } from "./detail.js";
 
 const MODES = [
   { key: "solo", label: "관상" },
@@ -74,6 +75,7 @@ export default function App() {
               <button onClick={() => saveCard(result)} style={S.save}>⬇ 카드 저장</button>
               <button onClick={() => setResult(null)} style={S.again}>다시</button>
             </div>
+            <ReadingDetail r={result} />
             {mode === "fortune" && (
               <p style={S.tomorrow}>내일의 운세는 자정에 열린다.</p>
             )}
@@ -141,6 +143,22 @@ function PosterCard({ r }) {
   );
 }
 
+function ReadingDetail({ r }) {
+  const sc = r.score != null ? scoreColor(r.score) : { text: "#b9a8f0" };
+  const sections = detailFor(r);
+  return (
+    <div style={D.box}>
+      <div style={{ ...D.kicker, color: sc.text }}>상세 풀이</div>
+      {sections.map(([head, body]) => (
+        <div key={head} style={D.row}>
+          <div style={D.head}>{head}</div>
+          <div style={D.body}>{body}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function kstDate() {
   const d = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "long", day: "numeric" }).format(new Date());
   return d;
@@ -159,6 +177,14 @@ const S = {
   save: { flex: 1, padding: "13px 0", fontSize: 15, fontWeight: 700, color: "#cdc6e2", background: "transparent", border: "1px solid #3a3450", borderRadius: 12, cursor: "pointer" },
   again: { flex: 1, padding: "13px 0", fontSize: 15, fontWeight: 700, color: "#8b87a0", background: "transparent", border: "1px solid #272336", borderRadius: 12, cursor: "pointer" },
   tomorrow: { textAlign: "center", color: "#6f6a82", fontSize: 13, marginTop: 14 },
+};
+
+const D = {
+  box: { marginTop: 18, background: "#100e18", border: "1px solid #221d33", borderRadius: 16, padding: "20px 20px 6px" },
+  kicker: { fontSize: 12, fontWeight: 700, letterSpacing: 1.5, marginBottom: 14 },
+  row: { marginBottom: 16 },
+  head: { fontSize: 13, fontWeight: 700, color: "#cdc6e2", marginBottom: 6 },
+  body: { fontSize: 14, lineHeight: 1.65, color: "#9a96ad" },
 };
 
 const C = {
