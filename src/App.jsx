@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { hashName, generateReading } from "./fortune.js";
 
 // ─── 오행(五行) 테마: 닉 해시로 결정 → 같은 닉은 항상 같은 기운 ───
 const ELEMENTS = {
@@ -10,12 +11,6 @@ const ELEMENTS = {
 };
 const ELEM_KEYS = ["火", "水", "木", "金", "土"];
 
-function hashName(name) {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return h;
-}
-
 export default function App() {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,26 +19,18 @@ export default function App() {
   const [err, setErr] = useState("");
   const cardRef = useRef(null);
 
-  async function read() {
+  function read() {
     const n = name.trim();
     if (!n) return;
-    setLoading(true); setErr(""); setResult(null);
-    const theme = ELEMENTS[ELEM_KEYS[hashName(n) % 5]];
-    setElem(theme);
-    try {
-      const res = await fetch("/api/read", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: n }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "실패");
-      setResult(data);
-    } catch (e) {
-      setErr("기운을 읽지 못했다. 닉을 바꾸거나 다시 시도하라.");
-    } finally {
+    setErr(""); setResult(null);
+    const key = ELEM_KEYS[hashName(n) % 5];
+    setElem(ELEMENTS[key]);
+    setLoading(true);
+    // 기운을 읽는 듯한 연출용 딜레이
+    setTimeout(() => {
+      setResult(generateReading(n, key));
       setLoading(false);
-    }
+    }, 650);
   }
 
   function download() {
