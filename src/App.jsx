@@ -1,188 +1,192 @@
-import React, { useState, useRef } from "react";
-import { hashName, generateReading } from "./fortune.js";
+// ─── 소환사 관상 — UI ───
+// 디자인은 주로 여기서 다듬는다. 색/해시는 theme.js, 챔프는 ddragon.js, 저장은 share.js.
 
-// ─── 오행(五行) 테마: 닉 해시로 결정 → 같은 닉은 항상 같은 기운 ───
-const ELEMENTS = {
-  火: { name: "火 · 불의 기운", sub: "Fire", bg: "#1a0e0e", glow: "#ff5a3c", ink: "#ffd9b0", line: "#7a2418", accent: "#ff6b47" },
-  水: { name: "水 · 물의 기운", sub: "Water", bg: "#0b1018", glow: "#3c8cff", ink: "#bcd6ff", line: "#163a5f", accent: "#5aa0ff" },
-  木: { name: "木 · 나무의 기운", sub: "Wood", bg: "#0c140e", glow: "#3cff8a", ink: "#bfe9cc", line: "#1d4a2d", accent: "#52d98a" },
-  金: { name: "金 · 쇠의 기운", sub: "Metal", bg: "#15120a", glow: "#ffd23c", ink: "#f0e3b8", line: "#5f4d16", accent: "#e9c44a" },
-  土: { name: "土 · 흙의 기운", sub: "Earth", bg: "#140f0b", glow: "#c98a4a", ink: "#e6cfb0", line: "#5a3d22", accent: "#cf9a5a" },
-};
-const ELEM_KEYS = ["火", "水", "木", "金", "土"];
+import React, { useEffect, useState } from "react";
+import { initDDragon, loadingUrl } from "./ddragon.js";
+import { read } from "./anthropic.js";
+import { saveCard } from "./share.js";
+import { scoreColor } from "./theme.js";
+
+const MODES = [
+  { key: "solo", label: "관상" },
+  { key: "duo", label: "궁합" },
+  { key: "fortune", label: "운세" },
+];
 
 export default function App() {
-  const [name, setName] = useState("");
+  const [mode, setMode] = useState("solo");
+  const [a, setA] = useState("");
+  const [b, setB] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
-  const [elem, setElem] = useState(null);
   const [err, setErr] = useState("");
-  const cardRef = useRef(null);
 
-  function read() {
-    const n = name.trim();
-    if (!n) return;
-    setErr(""); setResult(null);
-    const key = ELEM_KEYS[hashName(n) % 5];
-    setElem(ELEMENTS[key]);
-    setLoading(true);
-    // 기운을 읽는 듯한 연출용 딜레이
-    setTimeout(() => {
-      setResult(generateReading(n, key));
+  useEffect(() => { initDDragon(); }, []);
+
+  async function go() {
+    if (!a.trim() || (mode === "duo" && !b.trim())) return;
+    setLoading(true); setErr(""); setResult(null);
+    try {
+      setResult(await read(mode, a.trim(), b.trim()));
+    } catch (e) {
+      setErr("기운을 읽지 못했다. 다시 시도하라.");
+    } finally {
       setLoading(false);
-    }, 650);
-  }
-
-  function download() {
-    if (!result || !elem) return;
-    const W = 1080, H = 1350, P = 80;
-    const cv = document.createElement("canvas");
-    cv.width = W; cv.height = H;
-    const c = cv.getContext("2d");
-    // 배경
-    const g = c.createRadialGradient(W / 2, H * 0.32, 80, W / 2, H * 0.32, H);
-    g.addColorStop(0, elem.line); g.addColorStop(1, elem.bg);
-    c.fillStyle = g; c.fillRect(0, 0, W, H);
-    // 테두리
-    c.strokeStyle = elem.glow; c.lineWidth = 3;
-    c.strokeRect(P / 2, P / 2, W - P, H - P);
-    c.strokeStyle = elem.line; c.lineWidth = 1;
-    c.strokeRect(P / 2 + 10, P / 2 + 10, W - P - 20, H - P - 20);
-
-    const cx = W / 2;
-    c.textAlign = "center";
-    // 한자 기운
-    c.fillStyle = elem.glow; c.font = "bold 180px serif";
-    c.fillText(elem.name.charAt(0), cx, 320);
-    c.fillStyle = elem.accent; c.font = "28px serif";
-    c.fillText(elem.sub.toUpperCase() + "  ·  소환사 관상", cx, 380);
-    // 닉
-    c.fillStyle = "#fff"; c.font = "bold 64px serif";
-    c.fillText(name.trim(), cx, 480);
-    // 한 줄 정의
-    c.fillStyle = elem.ink; c.font = "italic 40px serif";
-    wrap(c, `"${result.oneLiner}"`, cx, 560, 880, 50);
-
-    // 본문 블록
-    const blocks = [
-      ["플레이 성향", result.playstyle],
-      ["봉인된 운명", result.fate],
-      ["찰떡 포지션", result.position],
-      ["경고", result.warning],
-    ];
-    let y = 700;
-    c.textAlign = "left";
-    blocks.forEach(([label, body]) => {
-      c.fillStyle = elem.accent; c.font = "bold 30px serif";
-      c.fillText("◆ " + label, P + 20, y);
-      c.fillStyle = elem.ink; c.font = "28px serif";
-      y = wrap(c, body, null, y + 44, W - 2 * P - 40, 40, P + 20) + 50;
-    });
-    c.textAlign = "center";
-    c.fillStyle = elem.accent; c.font = "24px serif";
-    c.fillText("소환사 관상 · summoner physiognomy", cx, H - P);
-
-    const a = document.createElement("a");
-    a.download = `관상_${name.trim()}.png`;
-    a.href = cv.toDataURL("image/png");
-    a.click();
-  }
-
-  // 한국어 글자 단위 줄바꿈
-  function wrap(c, text, cx, y, maxW, lh, left) {
-    const chars = [...text]; let line = ""; let yy = y;
-    for (const ch of chars) {
-      if (c.measureText(line + ch).width > maxW && line) {
-        cx != null ? c.fillText(line, cx, yy) : c.fillText(line, left, yy);
-        line = ch; yy += lh;
-      } else line += ch;
     }
-    if (line) cx != null ? c.fillText(line, cx, yy) : c.fillText(line, left, yy);
-    return yy;
   }
 
-  const t = elem || ELEMENTS["金"];
-  const serif = "'Apple SD Gothic Neo','Nanum Myeongjo',ui-serif,Georgia,serif";
+  function switchMode(m) { setMode(m); setResult(null); setErr(""); }
 
   return (
-    <div style={{ minHeight: "100vh", background: t.bg, color: t.ink, fontFamily: serif,
-      display: "flex", flexDirection: "column", alignItems: "center", padding: "48px 20px",
-      transition: "background .6s ease" }}>
-      <div style={{ maxWidth: 560, width: "100%", textAlign: "center" }}>
-        <div style={{ fontSize: 13, letterSpacing: 6, color: t.accent, marginBottom: 12 }}>
-          召喚士 觀相
+    <div style={S.page}>
+      <div style={{ width: "100%", maxWidth: 380 }}>
+        <div style={{ textAlign: "center", marginBottom: 26 }}>
+          <div style={S.kicker}>召喚士 觀相</div>
+          <h1 style={S.h1}>소환사 관상</h1>
+          <p style={S.sub}>이름에 깃든 기운을 읽는다. 전적은 보지 않는다.</p>
         </div>
-        <h1 style={{ fontSize: 38, fontWeight: 700, color: "#fff", margin: "0 0 8px" }}>
-          소환사 관상
-        </h1>
-        <p style={{ fontSize: 15, opacity: 0.7, marginBottom: 36 }}>
-          이름 석 자에 깃든 기운을 읽는다. 전적은 보지 않는다.
-        </p>
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 28 }}>
-          <input value={name} onChange={e => setName(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && read()}
-            placeholder="소환사명을 적으시오"
-            style={{ flex: 1, padding: "14px 18px", fontSize: 16, fontFamily: serif,
-              background: "rgba(255,255,255,.04)", border: `1px solid ${t.line}`,
-              borderRadius: 4, color: "#fff", outline: "none" }} />
-          <button onClick={read} disabled={loading}
-            style={{ padding: "0 24px", fontSize: 16, fontFamily: serif, fontWeight: 700,
-              background: t.glow, color: t.bg, border: "none", borderRadius: 4,
-              cursor: "pointer", whiteSpace: "nowrap" }}>
-            {loading ? "보는 중…" : "관상 보기"}
+        <div style={S.tabs}>
+          {MODES.map((m) => (
+            <button key={m.key} onClick={() => switchMode(m.key)}
+              style={{ ...S.tab, ...(mode === m.key ? S.tabOn : {}) }}>{m.label}</button>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 22 }}>
+          <input value={a} onChange={(e) => setA(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()}
+            placeholder={mode === "duo" ? "내 소환사명" : "소환사명을 적으시오"} style={S.input} />
+          {mode === "duo" && (
+            <input value={b} onChange={(e) => setB(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()}
+              placeholder="듀오 소환사명" style={S.input} />
+          )}
+          <button onClick={go} disabled={loading} style={S.cta}>
+            {loading ? "기운을 읽는 중…" : mode === "duo" ? "궁합 보기" : mode === "fortune" ? "오늘 운세 보기" : "관상 보기"}
           </button>
         </div>
 
-        {err && <p style={{ color: t.accent, fontSize: 14 }}>{err}</p>}
+        {err && <p style={{ color: "#e07c8c", fontSize: 14, textAlign: "center" }}>{err}</p>}
 
-        {loading && (
-          <div style={{ fontSize: 14, opacity: 0.6, letterSpacing: 2 }}>
-            ☯ 기운을 읽는 중…
-          </div>
-        )}
-
-        {result && elem && (
+        {result && (
           <>
-            <div ref={cardRef} style={{ textAlign: "left", border: `1px solid ${elem.line}`,
-              borderRadius: 6, padding: "36px 32px", background: "rgba(0,0,0,.25)",
-              boxShadow: `0 0 60px ${elem.glow}22` }}>
-              <div style={{ textAlign: "center", marginBottom: 24 }}>
-                <div style={{ fontSize: 88, fontWeight: 700, color: elem.glow, lineHeight: 1,
-                  textShadow: `0 0 30px ${elem.glow}66` }}>{elem.name.charAt(0)}</div>
-                <div style={{ fontSize: 12, letterSpacing: 4, color: elem.accent, marginTop: 6 }}>
-                  {elem.sub.toUpperCase()} · {name.trim()}
-                </div>
-              </div>
-              <p style={{ textAlign: "center", fontSize: 24, fontStyle: "italic", color: "#fff",
-                margin: "0 0 28px", lineHeight: 1.4 }}>"{result.oneLiner}"</p>
-              {[["플레이 성향", result.playstyle], ["봉인된 운명", result.fate],
-                ["찰떡 포지션", result.position], ["경고", result.warning]].map(([l, b]) => (
-                <div key={l} style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 2,
-                    color: elem.accent, marginBottom: 6 }}>◆ {l}</div>
-                  <div style={{ fontSize: 15, lineHeight: 1.6, color: elem.ink }}>{b}</div>
-                </div>
-              ))}
+            <PosterCard r={result} />
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <button onClick={() => saveCard(result)} style={S.save}>⬇ 카드 저장</button>
+              <button onClick={() => setResult(null)} style={S.again}>다시</button>
             </div>
-
-            <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
-              <button onClick={download}
-                style={{ flex: 1, padding: "13px", fontSize: 15, fontFamily: serif, fontWeight: 700,
-                  background: "transparent", color: elem.glow, border: `1px solid ${elem.glow}`,
-                  borderRadius: 4, cursor: "pointer" }}>
-                ⬇ 카드 저장
-              </button>
-              <button onClick={() => { setResult(null); setName(""); }}
-                style={{ flex: 1, padding: "13px", fontSize: 15, fontFamily: serif,
-                  background: "transparent", color: t.ink, border: `1px solid ${t.line}`,
-                  borderRadius: 4, cursor: "pointer", opacity: 0.7 }}>
-                다른 이름 보기
-              </button>
-            </div>
+            {mode === "fortune" && (
+              <p style={S.tomorrow}>내일의 운세는 자정에 열린다.</p>
+            )}
           </>
         )}
       </div>
     </div>
   );
 }
+
+function PosterCard({ r }) {
+  const sc = r.score != null ? scoreColor(r.score) : { halo: "#6a4ea0", bar: "linear-gradient(90deg,#7c9fe0,#b9a8f0)", text: "#b9a8f0" };
+  const duo = r.mode === "duo";
+
+  return (
+    <div style={C.card}>
+      <div style={{ ...C.halo, background: `radial-gradient(circle,${sc.halo}33 0%,transparent 62%)` }} />
+      {duo ? (
+        <div style={C.duoHero}>
+          <div style={C.half}><img src={loadingUrl(r.champ.id)} alt="" style={C.heroImg} /></div>
+          <div style={C.half}><img src={loadingUrl(r.champ2.id)} alt="" style={C.heroImg} /></div>
+          <div style={C.seam} />
+          <div style={C.fade} />
+        </div>
+      ) : (
+        <div style={C.hero}>
+          <img src={loadingUrl(r.champ.id)} alt="" style={C.heroImg} />
+          <div style={C.fade} />
+        </div>
+      )}
+
+      <div style={C.ui}>
+        <div style={C.top}>
+          <span style={C.badge}>{duo ? "듀오 궁합" : r.mode === "fortune" ? "오늘의 운세" : "소환사 자격증"}</span>
+          {r.no != null ? <span style={C.no}>No. {r.no}</span>
+            : <span style={C.no}>{kstDate()}</span>}
+        </div>
+
+        {duo && (
+          <div style={C.pctBig}>
+            <div style={{ ...C.pctN, color: "#fff" }}>{r.score}<span style={{ fontSize: 28 }}>%</span></div>
+            <div style={C.pctK}>궁합도</div>
+          </div>
+        )}
+
+        <div style={C.bottom}>
+          {duo && (
+            <div style={C.track}><div style={{ ...C.fill, width: `${r.score}%`, background: sc.bar }} /></div>
+          )}
+          <div style={{ ...C.eyebrow, color: sc.text }}>{r.eyebrow || "케미"}</div>
+          <div style={C.title}>{r.pre} <em style={{ fontStyle: "normal", color: sc.text }}>{r.em}</em></div>
+          {r.desc && <div style={C.desc}>{r.desc}</div>}
+          <div style={C.nick}>{r.nick}</div>
+          <div style={C.meta}>
+            {r.fields.map((f) => (
+              <div key={f[0]} style={C.metaItem}>
+                <span style={C.metaK}>{f[0]}</span><span style={C.metaV}>{f[1]}</span>
+              </div>
+            ))}
+          </div>
+          <div style={C.foot}>League of Legends © Riot Games · summoner-reading.app</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function kstDate() {
+  const d = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "long", day: "numeric" }).format(new Date());
+  return d;
+}
+
+const S = {
+  page: { minHeight: "100vh", background: "#070709", color: "#e7e1f7", display: "flex", justifyContent: "center", padding: "44px 20px" },
+  kicker: { fontSize: 12, letterSpacing: 6, color: "#9b8fd0", marginBottom: 10 },
+  h1: { fontSize: 32, fontWeight: 800, color: "#fff", margin: "0 0 6px", letterSpacing: -1 },
+  sub: { fontSize: 14, color: "#8b87a0", margin: 0 },
+  tabs: { display: "flex", gap: 6, background: "#15131f", padding: 5, borderRadius: 14, marginBottom: 16 },
+  tab: { flex: 1, padding: "10px 0", fontSize: 15, fontWeight: 700, color: "#8b87a0", background: "transparent", border: "none", borderRadius: 10, cursor: "pointer" },
+  tabOn: { background: "#2a2540", color: "#fff" },
+  input: { padding: "14px 16px", fontSize: 16, background: "#15131f", border: "1px solid #272336", borderRadius: 12, color: "#fff", outline: "none" },
+  cta: { padding: "15px 0", fontSize: 16, fontWeight: 800, color: "#fff", background: "#6a4ea0", border: "none", borderRadius: 12, cursor: "pointer" },
+  save: { flex: 1, padding: "13px 0", fontSize: 15, fontWeight: 700, color: "#cdc6e2", background: "transparent", border: "1px solid #3a3450", borderRadius: 12, cursor: "pointer" },
+  again: { flex: 1, padding: "13px 0", fontSize: 15, fontWeight: 700, color: "#8b87a0", background: "transparent", border: "1px solid #272336", borderRadius: 12, cursor: "pointer" },
+  tomorrow: { textAlign: "center", color: "#6f6a82", fontSize: 13, marginTop: 14 },
+};
+
+const C = {
+  card: { width: "100%", aspectRatio: "330 / 472", maxWidth: 380, borderRadius: 26, position: "relative", overflow: "hidden", background: "#0c0b12", margin: "0 auto" },
+  halo: { position: "absolute", top: "-20%", left: "50%", transform: "translateX(-50%)", width: "100%", paddingBottom: "100%", borderRadius: "50%" },
+  hero: { position: "absolute", inset: 0 },
+  duoHero: { position: "absolute", inset: 0, display: "flex" },
+  half: { width: "50%", height: "78%", overflow: "hidden", position: "relative" },
+  heroImg: { width: "100%", height: "78%", objectFit: "cover", objectPosition: "top center", filter: "saturate(.92) contrast(1.02)" },
+  seam: { position: "absolute", left: "50%", top: 0, width: 60, height: "78%", transform: "translateX(-50%)", background: "linear-gradient(90deg,transparent,rgba(12,11,18,.6),transparent)" },
+  fade: { position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(12,11,18,0) 30%, rgba(12,11,18,.55) 52%, rgba(12,11,18,.92) 68%, #0c0b12 80%)" },
+  ui: { position: "absolute", inset: 0, padding: "22px 24px", display: "flex", flexDirection: "column" },
+  top: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  badge: { background: "rgba(255,255,255,.1)", backdropFilter: "blur(8px)", color: "#d6d2e2", fontSize: 11, fontWeight: 600, letterSpacing: .5, padding: "6px 12px", borderRadius: 99 },
+  no: { color: "#b9b4c8", fontSize: 12, fontWeight: 500, textShadow: "0 1px 6px rgba(0,0,0,.6)" },
+  pctBig: { position: "absolute", top: "30%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" },
+  pctN: { fontSize: 60, fontWeight: 800, letterSpacing: -3, lineHeight: 1, textShadow: "0 4px 30px rgba(0,0,0,.7)" },
+  pctK: { color: "#cdc6e2", fontSize: 12, fontWeight: 600, letterSpacing: 1, marginTop: 2 },
+  bottom: { marginTop: "auto" },
+  track: { height: 6, background: "rgba(255,255,255,.12)", borderRadius: 99, overflow: "hidden", marginBottom: 14 },
+  fill: { height: "100%", borderRadius: 99 },
+  eyebrow: { fontSize: 12, fontWeight: 600, letterSpacing: 1, marginBottom: 7 },
+  title: { color: "#fff", fontSize: 32, fontWeight: 800, letterSpacing: -1.2, lineHeight: 1.08 },
+  desc: { color: "#a5a0b8", fontSize: 13, lineHeight: 1.5, marginTop: 9 },
+  nick: { color: "#8b87a0", fontSize: 13, fontWeight: 500, marginTop: 8 },
+  meta: { display: "flex", gap: 18, marginTop: 16, borderTop: "1px solid rgba(255,255,255,.09)", paddingTop: 14 },
+  metaItem: { display: "flex", flexDirection: "column", gap: 3 },
+  metaK: { color: "#6f6a82", fontSize: 10, fontWeight: 500, letterSpacing: .5 },
+  metaV: { color: "#ddd8ea", fontSize: 14, fontWeight: 700 },
+  foot: { color: "#4d495c", fontSize: 9, marginTop: 13, letterSpacing: .3 },
+};
