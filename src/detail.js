@@ -221,7 +221,13 @@ const DUO_VERDICT = [
   "솔로 큐가 정신건강엔 나을 수도 있다. 그래도 재미 하나는 보장.",
 ];
 
-const champData = (id) => CHAMP[id] || FALLBACK;
+export const champData = (id) => CHAMP[id] || FALLBACK;
+
+// 챔프 칭호를 카드 제목용 pre/em으로 분리 (마지막 어절을 강조어로)
+export function splitTag(tag) {
+  const i = tag.lastIndexOf(" ");
+  return i < 0 ? { pre: "", em: tag } : { pre: tag.slice(0, i), em: tag.slice(i + 1) };
+}
 
 export function detailFor(r) {
   if (r.mode === "duo") {
@@ -241,8 +247,8 @@ export function detailFor(r) {
       ["행운 포인트", c.강점],
     ];
   }
+  // 성향은 카드 제목 아래(desc)로 올라가므로 상세에선 제외해 중복 방지
   return [
-    ["플레이 성향", c.성향],
     ["강점", c.강점],
     ["주의할 점", c.주의],
     ["경고", c.경고],

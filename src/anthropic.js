@@ -6,6 +6,7 @@
 
 import { hashStr, scoreFrom } from "./theme.js";
 import { champFor } from "./ddragon.js";
+import { champData, splitTag } from "./detail.js";
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
 const KEY = import.meta.env.VITE_ANTHROPIC_API_KEY;
@@ -63,10 +64,13 @@ function mock(mode, a, b) {
     };
   }
   const r = pick(READINGS, seed);
+  const champ = champFor(a);
+  const c = champData(champ.id);
+  const { pre, em } = splitTag(c.tag);
   return {
-    mode, no: (seed % 900000 + 100000), champ: champFor(a),
-    eyebrow: "너의 정체", pre: r.pre, em: r.em, desc: r.desc, nick: `@${a}`,
-    fields: [["주 라인", r.line], ["기질", r.trait], ["주력 챔프", champFor(a).name]],
+    mode, no: (seed % 900000 + 100000), champ,
+    eyebrow: "너의 정체", pre, em, desc: c.성향, nick: `@${a}`,
+    fields: [["주 라인", r.line], ["기질", r.trait], ["주력 챔프", champ.name]],
   };
 }
 
